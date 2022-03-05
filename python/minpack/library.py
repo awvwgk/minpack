@@ -21,6 +21,28 @@ from .typing import (
 from ._libminpack import ffi, lib
 from .exception import info_hy, info_lm
 
+try:
+    from numba import njit
+    from numba.core.typing import cffi_utils
+    from . import _libminpack
+
+    cffi_utils.register_module(_libminpack)
+    hybrd_sig = cffi_utils.map_type(ffi.typeof("minpack_func"), use_record_dtype=True)
+    hybrj_sig = cffi_utils.map_type(
+        ffi.typeof("minpack_fcn_hybrj"), use_record_dtype=True
+    )
+    lmdif_sig = cffi_utils.map_type(ffi.typeof("minpack_func2"), use_record_dtype=True)
+    lmder_sig = cffi_utils.map_type(
+        ffi.typeof("minpack_fcn_lmder"), use_record_dtype=True
+    )
+    lmstr_sig = cffi_utils.map_type(
+        ffi.typeof("minpack_fcn_lmstr"), use_record_dtype=True
+    )
+except ModuleNotFoundError:
+
+    def njit(func):
+        return func
+
 
 class UserData:
     """
@@ -33,6 +55,7 @@ class UserData:
         self.exception = None
 
 
+@njit
 @ffi.def_extern()
 def func(n, x, fvec, iflag, data) -> None:
     """
@@ -52,6 +75,7 @@ def func(n, x, fvec, iflag, data) -> None:
         handle.exception = e
 
 
+@njit
 @ffi.def_extern()
 def fcn_hybrj(n, x, fvec, fjac, ldfjac, iflag, data) -> None:
     """
@@ -74,6 +98,7 @@ def fcn_hybrj(n, x, fvec, fjac, ldfjac, iflag, data) -> None:
         handle.exception = e
 
 
+@njit
 @ffi.def_extern()
 def fcn_lmder(m, n, x, fvec, fjac, ldfjac, iflag, data) -> None:
     """
@@ -96,6 +121,7 @@ def fcn_lmder(m, n, x, fvec, fjac, ldfjac, iflag, data) -> None:
         handle.exception = e
 
 
+@njit
 @ffi.def_extern()
 def func2(m, n, x, fvec, iflag, data) -> None:
     """
@@ -115,6 +141,7 @@ def func2(m, n, x, fvec, iflag, data) -> None:
         handle.exception = e
 
 
+@njit
 @ffi.def_extern()
 def fcn_lmstr(m, n, x, fvec, fjrow, iflag, data) -> None:
     """
@@ -169,7 +196,7 @@ def cffi_callback(func, callback):
         if data.exception is not None:
             raise data.exception
 
-    return entry_point
+    return njit(entry_point)
 
 
 real = np.dtype("f8")
@@ -186,6 +213,7 @@ minpack_lmstr = cffi_callback(lib.fcn_lmstr)(lib.minpack_lmstr)
 minpack_chkder = lib.minpack_chkder
 
 
+@njit
 def hybrd1(
     fcn: CallableHybrd,
     x: np.ndarray,
@@ -251,7 +279,7 @@ def hybrd1(
     n = x.size
     lwa = n * (3 * n + 13) // 2
     wa = np.zeros(lwa, dtype=real)
-    info = ffi.new("int *")
+    info = np.array(0, dtype=np.int32)
 
     minpack_hybrd1(
         fcn,
@@ -259,16 +287,17 @@ def hybrd1(
         ffi.cast("double*", x.ctypes.data),
         ffi.cast("double*", fvec.ctypes.data),
         tol,
-        info,
+        ffi.cast("int*", info.ctypes.data),
         ffi.cast("double*", wa.ctypes.data),
         lwa,
     )
-    ex = info_hy(info[0])
+    ex = info_hy(info.item())
     if ex is not None:
         raise ex(ex.__doc__)
-    return info[0]
+    return info.item()
 
 
+@njit
 def hybrd(
     fcn: CallableHybrd,
     x: np.ndarray,
@@ -307,8 +336,8 @@ def hybrd(
         When the function is not changing.
     """
     n = x.size
-    info = ffi.new("int *")
-    nfev = ffi.new("int *")
+    info = np.array(0, dtype=np.int32)
+    nfev = np.array(0, dtype=np.int32)
     if maxfev is None:
         maxfev = 200 * (n + 1)
     if ml is None:
@@ -342,8 +371,8 @@ def hybrd(
         mode,
         factor,
         nprint,
-        info,
-        nfev,
+        ffi.cast("int*", info.ctypes.data),
+        ffi.cast("int*", nfev.ctypes.data),
         ffi.cast("double*", fjac.ctypes.data),
         n,
         ffi.cast("double*", r.ctypes.data),
@@ -354,12 +383,13 @@ def hybrd(
         ffi.cast("double*", wa3.ctypes.data),
         ffi.cast("double*", wa4.ctypes.data),
     )
-    ex = info_hy(info[0])
+    ex = info_hy(info.item())
     if ex is not None:
         raise ex(ex.__doc__)
-    return info[0]
+    return info.item()
 
 
+@njit
 def hybrj1(
     fcn: CallableHybrj,
     x: np.ndarray,
@@ -390,7 +420,7 @@ def hybrj1(
     n = x.size
     lwa = (n * (n + 13)) // 2
     wa = np.zeros(lwa, dtype=real)
-    info = ffi.new("int *")
+    info = np.array(0, dtype=np.int32)
 
     minpack_hybrj1(
         fcn,
@@ -400,16 +430,17 @@ def hybrj1(
         ffi.cast("double*", fjac.ctypes.data),
         n,
         tol,
-        info,
+        ffi.cast("int*", info.ctypes.data),
         ffi.cast("double*", wa.ctypes.data),
         lwa,
     )
-    ex = info_hy(info[0])
+    ex = info_hy(info.item())
     if ex is not None:
         raise ex(ex.__doc__)
-    return info[0]
+    return info.item()
 
 
+@njit
 def hybrj(
     fcn: CallableHybrj,
     x: np.ndarray,
@@ -445,9 +476,9 @@ def hybrj(
         When the function is not changing.
     """
     n = x.size
-    info = ffi.new("int *")
-    nfev = ffi.new("int *")
-    njev = ffi.new("int *")
+    info = np.array(0, dtype=np.int32)
+    nfev = np.array(0, dtype=np.int32)
+    njev = np.array(0, dtype=np.int32)
     if maxfev is None:
         maxfev = 200 * (n + 1)
     if diag is None:
@@ -476,9 +507,9 @@ def hybrj(
         mode,
         factor,
         nprint,
-        info,
-        nfev,
-        njev,
+        ffi.cast("int*", info.ctypes.data),
+        ffi.cast("int*", nfev.ctypes.data),
+        ffi.cast("int*", njev.ctypes.data),
         ffi.cast("double*", r.ctypes.data),
         r.size,
         ffi.cast("double*", qtf.ctypes.data),
@@ -487,12 +518,13 @@ def hybrj(
         ffi.cast("double*", wa3.ctypes.data),
         ffi.cast("double*", wa4.ctypes.data),
     )
-    ex = info_hy(info[0])
+    ex = info_hy(info.item())
     if ex is not None:
         raise ex(ex.__doc__)
-    return info[0]
+    return info.item()
 
 
+@njit
 def lmder1(
     fcn: CallableLmder,
     x: np.ndarray,
@@ -524,7 +556,7 @@ def lmder1(
     lwa = 5 * n + m
     wa = np.zeros(lwa, dtype=real)
     ipvt = np.zeros(n, dtype=np.int32)
-    info = ffi.new("int *")
+    info = np.array(0, dtype=np.int32)
 
     minpack_lmder1(
         fcn,
@@ -535,17 +567,18 @@ def lmder1(
         ffi.cast("double*", fjac.ctypes.data),
         m,
         tol,
-        info,
+        ffi.cast("int*", info.ctypes.data),
         ffi.cast("int*", ipvt.ctypes.data),
         ffi.cast("double*", wa.ctypes.data),
         lwa,
     )
-    ex = info_lm(info[0])
+    ex = info_lm(info.item())
     if ex is not None:
         raise ex(ex.__doc__)
-    return info[0]
+    return info.item()
 
 
+@njit
 def lmder(
     fcn: CallableLmder,
     x: np.ndarray,
@@ -583,9 +616,9 @@ def lmder(
     """
     n = x.size
     m = fvec.size
-    info = ffi.new("int *")
-    nfev = ffi.new("int *")
-    njev = ffi.new("int *")
+    info = np.array(0, dtype=np.int32)
+    nfev = np.array(0, dtype=np.int32)
+    njev = np.array(0, dtype=np.int32)
     if diag is None:
         diag = np.ones(n, dtype=real)
     if maxfev is None:
@@ -615,9 +648,9 @@ def lmder(
         mode,
         factor,
         nprint,
-        info,
-        nfev,
-        njev,
+        ffi.cast("int*", info.ctypes.data),
+        ffi.cast("int*", nfev.ctypes.data),
+        ffi.cast("int*", njev.ctypes.data),
         ffi.cast("int*", ipvt.ctypes.data),
         ffi.cast("double*", qtf.ctypes.data),
         ffi.cast("double*", wa1.ctypes.data),
@@ -625,12 +658,13 @@ def lmder(
         ffi.cast("double*", wa3.ctypes.data),
         ffi.cast("double*", wa4.ctypes.data),
     )
-    ex = info_lm(info[0])
+    ex = info_lm(info.item())
     if ex is not None:
         raise ex(ex.__doc__)
-    return info[0]
+    return info.item()
 
 
+@njit
 def lmdif1(
     fcn: CallableLmdif,
     x: np.ndarray,
@@ -696,7 +730,7 @@ def lmdif1(
     lwa = m * n + 5 * n + m
     wa = np.zeros(lwa, dtype=real)
     ipvt = np.zeros(n, dtype=np.int32)
-    info = ffi.new("int *")
+    info = np.array(0, dtype=np.int32)
 
     minpack_lmdif1(
         fcn,
@@ -705,17 +739,18 @@ def lmdif1(
         ffi.cast("double*", x.ctypes.data),
         ffi.cast("double*", fvec.ctypes.data),
         tol,
-        info,
+        ffi.cast("int*", info.ctypes.data),
         ffi.cast("int*", ipvt.ctypes.data),
         ffi.cast("double*", wa.ctypes.data),
         lwa,
     )
-    ex = info_lm(info[0])
+    ex = info_lm(info.item())
     if ex is not None:
         raise ex(ex.__doc__)
-    return info[0]
+    return info.item()
 
 
+@njit
 def lmdif(
     fcn: CallableLmdif,
     x: np.ndarray,
@@ -755,8 +790,8 @@ def lmdif(
     """
     n = x.size
     m = fvec.size
-    info = ffi.new("int *")
-    nfev = ffi.new("int *")
+    info = np.array(0, dtype=np.int32)
+    nfev = np.array(0, dtype=np.int32)
     if maxfev is None:
         maxfev = 200 * (n + 1)
     if diag is None:
@@ -787,8 +822,8 @@ def lmdif(
         mode,
         factor,
         nprint,
-        info,
-        nfev,
+        ffi.cast("int*", info.ctypes.data),
+        ffi.cast("int*", nfev.ctypes.data),
         ffi.cast("double*", fjac.ctypes.data),
         m,
         ffi.cast("int*", ipvt.ctypes.data),
@@ -798,12 +833,13 @@ def lmdif(
         ffi.cast("double*", wa3.ctypes.data),
         ffi.cast("double*", wa4.ctypes.data),
     )
-    ex = info_lm(info[0])
+    ex = info_lm(info.item())
     if ex is not None:
         raise ex(ex.__doc__)
-    return info[0]
+    return info.item()
 
 
+@njit
 def lmstr1(
     fcn: CallableLmstr,
     x: np.ndarray,
@@ -836,7 +872,7 @@ def lmstr1(
     lwa = m * n + 5 * n + m
     wa = np.zeros(lwa, dtype=real)
     ipvt = np.zeros(n, dtype=np.int32)
-    info = ffi.new("int *")
+    info = np.array(0, dtype=np.int32)
 
     minpack_lmstr1(
         fcn,
@@ -847,17 +883,18 @@ def lmstr1(
         ffi.cast("double*", fjac.ctypes.data),
         n,
         tol,
-        info,
+        ffi.cast("int*", info.ctypes.data),
         ffi.cast("int*", ipvt.ctypes.data),
         ffi.cast("double*", wa.ctypes.data),
         lwa,
     )
-    ex = info_lm(info[0])
+    ex = info_lm(info.item())
     if ex is not None:
         raise ex(ex.__doc__)
-    return info[0]
+    return info.item()
 
 
+@njit
 def lmstr(
     fcn: CallableLmstr,
     x: np.ndarray,
@@ -896,9 +933,9 @@ def lmstr(
     """
     n = x.size
     m = fvec.size
-    info = ffi.new("int *")
-    nfev = ffi.new("int *")
-    njev = ffi.new("int *")
+    info = np.array(0, dtype=np.int32)
+    nfev = np.array(0, dtype=np.int32)
+    njev = np.array(0, dtype=np.int32)
     if maxfev is None:
         maxfev = 100 * (n + 1)
     if diag is None:
@@ -928,9 +965,9 @@ def lmstr(
         mode,
         factor,
         nprint,
-        info,
-        nfev,
-        njev,
+        ffi.cast("int*", info.ctypes.data),
+        ffi.cast("int*", nfev.ctypes.data),
+        ffi.cast("int*", njev.ctypes.data),
         ffi.cast("int*", ipvt.ctypes.data),
         ffi.cast("double*", qtf.ctypes.data),
         ffi.cast("double*", wa1.ctypes.data),
@@ -938,12 +975,13 @@ def lmstr(
         ffi.cast("double*", wa3.ctypes.data),
         ffi.cast("double*", wa4.ctypes.data),
     )
-    ex = info_lm(info[0])
+    ex = info_lm(info.item())
     if ex is not None:
         raise ex(ex.__doc__)
-    return info[0]
+    return info.item()
 
 
+@njit
 def chkder(x, fvec, fjac, xp, fvecp, check, error):
     """
     This subroutine checks the gradients of m nonlinear functions

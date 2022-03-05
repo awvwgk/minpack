@@ -6,6 +6,13 @@ by the library to exceptions.
 
 from typing import Optional, Type
 
+try:
+    from numba import njit
+except ModuleNotFoundError:
+
+    def njit(func):
+        return func
+
 
 class MinpackError(Exception):
     """
@@ -73,6 +80,7 @@ class MinpackSlowProgressJacobian(MinpackError):
     """
 
 
+@njit
 def info_hy(info: int) -> Optional[Type[MinpackError]]:
     """
     Get possible errors for `hybrd` and `hybrj` drivers.
@@ -87,6 +95,7 @@ def info_hy(info: int) -> Optional[Type[MinpackError]]:
     }.get(info)
 
 
+@njit
 def info_lm(info: int) -> Optional[Type[MinpackError]]:
     """
     Get possible errors for `lmdif`, `lmder`, and `lmstr` drivers.
